@@ -1,0 +1,668 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Flock Energy Urja Meter API",
+    "version": "1.0.0",
+    "description": "A normalized REST API wrapper over the authenticated Urja Meter Ops portal."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Local development"
+    }
+  ],
+  "tags": [
+    { "name": "Dashboard" },
+    { "name": "Meters" },
+    { "name": "Transformers" }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Check API process health",
+        "description": "Confirms only that the API process is running. It does not verify portal availability or authentication.",
+        "responses": {
+          "200": {
+            "description": "API process is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "status": { "type": "string", "example": "ok" } },
+                  "required": ["status"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard": {
+      "get": {
+        "tags": ["Dashboard"],
+        "summary": "Get dashboard data or index-build progress",
+        "description": "Returns the complete dashboard dataset when the local index is ready. While it is building, returns progress and meters completed since cursor; pass meta.nextCursor as cursor to fetch newly completed meters.",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Zero-based offset into completed meters while the index is building; defaults to 0.",
+            "schema": { "type": "integer", "minimum": 0, "default": 0 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dashboard data or index-build progress",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DashboardResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "502": { "$ref": "#/components/responses/UpstreamError" },
+          "504": { "$ref": "#/components/responses/UpstreamTimeout" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/v1/meters": {
+      "get": {
+        "tags": ["Meters"],
+        "summary": "Search and list meters",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Optional portal search string. Omit it or pass an empty string to list all meters. Must be a single string of at most 200 characters.",
+            "schema": { "type": "string", "maxLength": 200 }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "One-based page number; defaults to 1. The portal currently uses 20 records per page.",
+            "schema": { "type": "integer", "minimum": 1, "default": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Meter page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/MeterSummary" }
+                    },
+                    "pagination": { "$ref": "#/components/schemas/Pagination" }
+                  },
+                  "required": ["data", "pagination"]
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "502": { "$ref": "#/components/responses/UpstreamError" },
+          "504": { "$ref": "#/components/responses/UpstreamTimeout" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/v1/hierarchy": {
+      "get": {
+        "tags": ["Meters"],
+        "summary": "Get the reconstructed meter network hierarchy",
+        "description": "Builds an in-memory index from the portal's paginated meter list and meter detail pages. Level names are inferred from codes; inconsistent and missing data is reported in meta.dataQuality.",
+        "responses": {
+          "200": {
+            "description": "Hierarchy tree and index freshness information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/HierarchyNode" }
+                    },
+                    "meta": { "$ref": "#/components/schemas/IndexMetadata" }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "502": { "$ref": "#/components/responses/UpstreamError" },
+          "504": { "$ref": "#/components/responses/UpstreamTimeout" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/v1/index/meters": {
+      "get": {
+        "tags": ["Meters"],
+        "summary": "Search the local meter index",
+        "description": "Filters the locally indexed meter records across attributes. The index refreshes after 15 minutes, is held in process memory, and is saved to a JSON snapshot.",
+        "parameters": [
+          { "name": "q", "in": "query", "schema": { "type": "string", "maxLength": 200 } },
+          { "name": "make", "in": "query", "schema": { "type": "string" } },
+          { "name": "status", "in": "query", "schema": { "type": "string" } },
+          { "name": "transformer", "in": "query", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1, "default": 1 } },
+          { "name": "limit", "in": "query", "description": "Maximum 200 records per response.", "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 100 } },
+          { "name": "lat", "in": "query", "description": "Must be supplied together with lon and radiusKm.", "schema": { "type": "number", "minimum": -90, "maximum": 90 } },
+          { "name": "lon", "in": "query", "description": "Must be supplied together with lat and radiusKm.", "schema": { "type": "number", "minimum": -180, "maximum": 180 } },
+          { "name": "radiusKm", "in": "query", "description": "Requires lat and lon; maximum 1000 km.", "schema": { "type": "number", "minimum": 0, "exclusiveMinimum": true, "maximum": 1000 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Filtered local index page",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IndexedMeterPage" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "502": { "$ref": "#/components/responses/UpstreamError" },
+          "504": { "$ref": "#/components/responses/UpstreamTimeout" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/v1/meters/nearby": {
+      "get": {
+        "tags": ["Meters"],
+        "summary": "Find nearby meters",
+        "description": "Returns meters with known coordinates within the radius, ordered nearest first. The default radius is 5 km.",
+        "parameters": [
+          { "name": "lat", "in": "query", "required": true, "schema": { "type": "number", "minimum": -90, "maximum": 90 } },
+          { "name": "lon", "in": "query", "required": true, "schema": { "type": "number", "minimum": -180, "maximum": 180 } },
+          { "name": "radiusKm", "in": "query", "schema": { "type": "number", "minimum": 0, "exclusiveMinimum": true, "maximum": 1000, "default": 5 } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1, "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Nearby meters with computed straight-line distance",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/IndexedMeterPage" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "502": { "$ref": "#/components/responses/UpstreamError" },
+          "504": { "$ref": "#/components/responses/UpstreamTimeout" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/v1/meters/{meterId}": {
+      "get": {
+        "tags": ["Meters"],
+        "summary": "Get a meter's nameplate, hierarchy, and location",
+        "parameters": [
+          { "$ref": "#/components/parameters/MeterId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Meter details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "$ref": "#/components/schemas/MeterDetail" }
+                  },
+                  "required": ["data"]
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "502": { "$ref": "#/components/responses/UpstreamError" },
+          "504": { "$ref": "#/components/responses/UpstreamTimeout" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/v1/meters/{meterId}/consumption": {
+      "get": {
+        "tags": ["Meters"],
+        "summary": "Get a meter's consumption readings",
+        "parameters": [
+          { "$ref": "#/components/parameters/MeterId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Consumption series; timestamps retain the portal's DD/MM/YYYY HH:mm format",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "meterId": { "type": "string" },
+                        "readings": {
+                          "type": "array",
+                          "items": { "$ref": "#/components/schemas/ConsumptionReading" }
+                        },
+                        "stale": {
+                          "type": "boolean",
+                          "description": "True when these readings are the last successful response and the latest portal refresh failed."
+                        }
+                      },
+                      "required": ["meterId", "readings"]
+                    }
+                  },
+                  "required": ["data"]
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "502": { "$ref": "#/components/responses/UpstreamError" },
+          "504": { "$ref": "#/components/responses/UpstreamTimeout" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/api/v1/transformers": {
+      "get": {
+        "tags": ["Transformers"],
+        "summary": "List distribution transformers",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "description": "One-based page number; defaults to 1.",
+            "schema": { "type": "integer", "minimum": 1, "default": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transformer page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Transformer" }
+                    },
+                    "pagination": { "$ref": "#/components/schemas/Pagination" }
+                  },
+                  "required": ["data", "pagination"]
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "502": { "$ref": "#/components/responses/UpstreamError" },
+          "504": { "$ref": "#/components/responses/UpstreamTimeout" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "MeterId": {
+        "name": "meterId",
+        "in": "path",
+        "required": true,
+        "description": "Portal meter identifier",
+        "schema": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" }
+      }
+    },
+    "schemas": {
+      "MeterSummary": {
+        "type": "object",
+        "properties": {
+          "meterId": { "type": "string" },
+          "serialNumber": { "type": "string", "nullable": true },
+          "make": { "type": "string", "nullable": true },
+          "phaseType": { "type": "string", "nullable": true },
+          "installationStatus": { "type": "string", "nullable": true },
+          "transformerCode": { "type": "string", "nullable": true }
+        },
+        "required": ["meterId"]
+      },
+      "IndexedMeter": {
+        "allOf": [
+          { "$ref": "#/components/schemas/MeterSummary" },
+          {
+            "type": "object",
+            "properties": {
+              "nameplate": {
+                "type": "object",
+                "additionalProperties": { "type": "string", "nullable": true }
+              },
+              "hierarchy": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "level": { "type": "string" },
+                    "name": { "type": "string" },
+                    "code": { "type": "string", "nullable": true }
+                  },
+                  "required": ["level", "name"]
+                }
+              },
+              "location": { "$ref": "#/components/schemas/Location" },
+              "detailLoaded": { "type": "boolean" },
+              "locationLoaded": { "type": "boolean" },
+              "dataQuality": { "type": "array", "items": { "$ref": "#/components/schemas/DataQualityIssue" } },
+              "treePath": { "type": "array", "items": { "type": "string" } },
+              "placement": { "type": "string", "enum": ["portal", "inferred", "unassigned"] },
+              "distanceKm": { "type": "number", "description": "Included only for nearby queries." }
+            }
+          }
+        ]
+      },
+      "DashboardResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "summary": {
+                "type": "object",
+                "nullable": true,
+                "allOf": [{ "$ref": "#/components/schemas/DashboardSummary" }]
+              },
+              "filters": {
+                "type": "object",
+                "nullable": true,
+                "allOf": [{ "$ref": "#/components/schemas/DashboardFilters" }]
+              },
+              "meters": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/DashboardMeter" }
+              }
+            },
+            "required": ["summary", "filters", "meters"]
+          },
+          "meta": { "$ref": "#/components/schemas/DashboardMetadata" }
+        },
+        "required": ["data", "meta"]
+      },
+      "DashboardSummary": {
+        "type": "object",
+        "properties": {
+          "total": { "type": "integer" },
+          "installed": { "type": "integer" },
+          "decommissioned": { "type": "integer" },
+          "located": { "type": "integer", "nullable": true },
+          "locationUnknown": { "type": "integer", "nullable": true },
+          "detailsMissing": { "type": "integer", "nullable": true }
+        },
+        "required": ["total", "installed", "decommissioned", "located", "locationUnknown", "detailsMissing"]
+      },
+      "DashboardFilters": {
+        "type": "object",
+        "properties": {
+          "statuses": { "type": "array", "items": { "type": "string" } },
+          "makes": { "type": "array", "items": { "type": "string" } },
+          "transformers": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["statuses", "makes", "transformers"]
+      },
+      "DashboardMeter": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "serial": { "type": "string", "nullable": true },
+          "make": { "type": "string", "nullable": true },
+          "status": { "type": "string", "nullable": true },
+          "transformer": { "type": "string", "nullable": true },
+          "lat": { "type": "number", "nullable": true },
+          "lon": { "type": "number", "nullable": true },
+          "path": { "type": "string" }
+        },
+        "required": ["id", "serial", "make", "status", "transformer", "lat", "lon", "path"]
+      },
+      "DashboardMetadata": {
+        "type": "object",
+        "description": "Fields vary by whether the index is ready or still building.",
+        "properties": {
+          "ready": { "type": "boolean" },
+          "phase": { "type": "string", "enum": ["listing", "details"] },
+          "progress": {
+            "type": "object",
+            "properties": {
+              "total": { "type": "integer" },
+              "listed": { "type": "integer" },
+              "detailed": { "type": "integer" },
+              "retrying": { "type": "object", "nullable": true, "additionalProperties": true }
+            }
+          },
+          "nextCursor": { "type": "integer" },
+          "reset": { "type": "boolean" },
+          "totalMeters": { "type": "integer" },
+          "indexedAt": { "type": "string", "format": "date-time" },
+          "stale": { "type": "boolean" },
+          "warning": { "type": "string" },
+          "refreshing": { "type": "boolean" },
+          "dataQualityCount": { "type": "integer" },
+          "incomplete": { "type": "integer" }
+        },
+        "required": ["ready"]
+      },
+      "DataQualityIssue": {
+        "type": "object",
+        "properties": {
+          "meterId": { "type": "string" },
+          "issue": { "type": "string" },
+          "detail": { "type": "string" }
+        },
+        "required": ["issue"]
+      },
+      "IndexedMeterPage": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/IndexedMeter" }
+          },
+          "pagination": { "$ref": "#/components/schemas/Pagination" },
+          "meta": { "$ref": "#/components/schemas/IndexMetadata" }
+        },
+        "required": ["data", "pagination", "meta"]
+      },
+      "HierarchyNode": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "level": {
+            "type": "string",
+            "enum": [
+              "zone",
+              "circle",
+              "division",
+              "subdivision",
+              "substation",
+              "feeder",
+              "distributionTransformer",
+              "unknown",
+              "meter"
+            ]
+          },
+          "name": { "type": "string" },
+          "code": { "type": "string", "nullable": true },
+          "meterCount": { "type": "integer" },
+          "aliases": { "type": "array", "items": { "type": "string" } },
+          "children": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/HierarchyNode" }
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Present for meter leaf nodes.",
+            "additionalProperties": true
+          }
+        },
+        "required": ["id", "level", "name", "code", "meterCount", "children"]
+      },
+      "IndexMetadata": {
+        "type": "object",
+        "properties": {
+          "totalMeters": { "type": "integer" },
+          "indexedAt": { "type": "string", "format": "date-time" },
+          "stale": { "type": "boolean" },
+          "warning": { "type": "string" },
+          "dataQuality": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/DataQualityIssue" }
+          },
+          "dataQualitySummary": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "issue": { "type": "string" },
+                "count": { "type": "integer" },
+                "reasons": { "type": "array", "items": { "type": "string" } },
+                "meters": { "type": "array", "items": { "type": "string" } }
+              },
+              "required": ["issue", "count", "reasons", "meters"]
+            }
+          }
+        },
+        "required": ["totalMeters", "indexedAt", "stale"]
+      },
+      "MeterDetail": {
+        "type": "object",
+        "properties": {
+          "meterId": { "type": "string" },
+          "nameplate": {
+            "type": "object",
+            "additionalProperties": { "type": "string", "nullable": true }
+          },
+          "hierarchy": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "level": {
+                  "type": "string",
+                  "enum": [
+                    "zone",
+                    "circle",
+                    "division",
+                    "subdivision",
+                    "substation",
+                    "feeder",
+                    "distributionTransformer",
+                    "unknown"
+                  ]
+                },
+                "name": { "type": "string" }
+              },
+              "required": ["level", "name"]
+            }
+          },
+          "location": { "$ref": "#/components/schemas/Location" },
+          "warnings": {
+            "type": "array",
+            "description": "Included when one or more detail or location lookups could not be completed.",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["meterId", "nameplate", "hierarchy", "location"]
+      },
+      "Location": {
+        "type": "object",
+        "properties": {
+          "latitude": { "type": "number", "nullable": true },
+          "longitude": { "type": "number", "nullable": true }
+        },
+        "required": ["latitude", "longitude"]
+      },
+      "ConsumptionReading": {
+        "type": "object",
+        "properties": {
+          "timestamp": { "type": "string", "nullable": true, "example": "23/06/2026 23:30" },
+          "kwh": { "type": "number", "nullable": true },
+          "kvah": { "type": "number", "nullable": true },
+          "voltageR": { "type": "number", "nullable": true }
+        },
+        "required": ["timestamp", "kwh", "kvah", "voltageR"]
+      },
+      "Transformer": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string" },
+          "name": { "type": "string", "nullable": true },
+          "feederCode": { "type": "string", "nullable": true },
+          "capacityKva": { "type": "number", "nullable": true }
+        },
+        "required": ["code", "name", "feederCode", "capacityKva"]
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer" },
+          "pageSize": { "type": "integer" },
+          "total": { "type": "integer" }
+        },
+        "required": ["page", "pageSize", "total"]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" }
+            },
+            "required": ["code", "message"]
+          }
+        },
+        "required": ["error"]
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Invalid request parameters",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "UpstreamError": {
+        "description": "The portal could not complete the request",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "UpstreamTimeout": {
+        "description": "The portal did not respond before the configured timeout",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "An unexpected API error. Internal details are not returned.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      }
+    }
+  }
+}

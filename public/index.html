@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0a0910">
+    <title>Flock Energy · Operations</title>
+    <link rel="icon" href="/favicon.png" type="image/png">
+    <link rel="apple-touch-icon" href="/webclip.png">
+    <script>
+      // Apply the saved theme before first paint so the page never flashes the wrong colours.
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem('atlas-theme') === 'light' ? 'light' : 'dark';
+      } catch (error) {
+        document.documentElement.dataset.theme = 'dark';
+      }
+    </script>
+    <link rel="stylesheet" href="/vendor/leaflet.css">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <!--
+      Logo colour filters. flock-logo.svg is drawn with a black bolt and a white wordmark, so it is loaded
+      as a plain <img> and recoloured here: black becomes the brand violet, white stays white (dark theme)
+      or turns into the page ink colour (light theme). The file itself is not modified.
+    -->
+    <svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false">
+      <defs>
+        <linearGradient id="link-grad" x1="0" x2="1" y1="0" y2="0">
+          <stop offset="0" style="stop-color:var(--accent);stop-opacity:.22"/>
+          <stop offset="1" style="stop-color:var(--accent);stop-opacity:.04"/>
+        </linearGradient>
+        <filter id="logo-dark" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
+          <feColorMatrix type="matrix" values="0.345 0 0 0 0.655   0 0.455 0 0 0.545   0 0 0.02 0 0.98   0 0 0 1 0"/>
+        </filter>
+        <filter id="logo-light" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
+          <feColorMatrix type="matrix" values="-0.384 0 0 0 0.486   0 -0.145 0 0 0.227   0 0 -0.741 0 0.929   0 0 0 1 0"/>
+        </filter>
+
+        <symbol id="i-overview" viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="9" rx="2"/><rect x="13.5" y="3" width="7.5" height="5.5" rx="2"/><rect x="13.5" y="11.5" width="7.5" height="9.5" rx="2"/><rect x="3" y="15" width="7.5" height="6" rx="2"/></symbol>
+        <symbol id="i-meters" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 9.5h18M3 14.5h18M9 4v16"/></symbol>
+        <symbol id="i-network" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.2"/><circle cx="19" cy="5.5" r="2.2"/><circle cx="19" cy="18.5" r="2.2"/><path d="M7.2 12h3.3c1.7 0 2-.6 2-2.2V8.5c0-1.6.6-3 2.4-3H16.8M10.5 12c1.7 0 2 .6 2 2.2v1.2c0 1.6.6 3.1 2.4 3.1h1.9"/></symbol>
+        <symbol id="i-map" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.6-6.5-11A6.5 6.5 0 0 1 12 3.5 6.5 6.5 0 0 1 18.5 10C18.5 15.4 12 21 12 21z"/><circle cx="12" cy="10" r="2.3"/></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></symbol>
+        <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/></symbol>
+        <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.5 13.2A8.5 8.5 0 1 1 10.8 3.5a6.7 6.7 0 0 0 9.7 9.7z"/></symbol>
+        <symbol id="i-code" viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></symbol>
+        <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+        <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+        <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V5h4M20 9V5h-4M4 15v4h4M20 15v4h-4"/></symbol>
+        <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V6.5A2.5 2.5 0 0 1 7.5 4H15"/></symbol>
+        <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></symbol>
+        <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13.5 2.5L5 13.5h6l-1 8 8.5-11h-6z"/></symbol>
+        <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+        <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+      </defs>
+    </svg>
+
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <!-- ============ Top bar: brand, one search for everything, sync status ============ -->
+    <header class="topbar">
+      <a class="brand" href="#view=overview" aria-label="Flock Energy, back to overview">
+        <img class="brand-logo" src="/flock-logo.svg" alt="Flock Energy">
+      </a>
+
+      <div class="omni" id="omni">
+        <label class="visually-hidden" for="omni-input">Search meters, transformers and areas, or ask a question</label>
+        <svg class="omni-icon" width="17" height="17" aria-hidden="true"><use href="#i-search"/></svg>
+        <input id="omni-input" type="text" autocomplete="off" spellcheck="false"
+               placeholder="Find a meter, transformer or area — or ask “installed Secure meters without coordinates”"
+               role="combobox" aria-expanded="false" aria-controls="omni-list" aria-autocomplete="list">
+        <kbd class="omni-kbd" aria-hidden="true">/</kbd>
+        <div class="omni-list" id="omni-list" role="listbox" aria-label="Search results" hidden></div>
+      </div>
+
+      <div class="topbar-right">
+        <div class="pill" id="sync-pill" role="status" aria-live="polite" title="">
+          <i class="pill-dot" aria-hidden="true"></i>
+          <span id="sync-text">Connecting…</span>
+        </div>
+        <button type="button" class="icon-btn" id="theme-toggle" aria-label="Switch between dark and light theme" title="Switch theme">
+          <svg class="icon-sun" width="18" height="18" aria-hidden="true"><use href="#i-sun"/></svg>
+          <svg class="icon-moon" width="18" height="18" aria-hidden="true"><use href="#i-moon"/></svg>
+        </button>
+        <a class="icon-btn docs-link" href="/docs" aria-label="API documentation" title="API documentation">
+          <svg width="18" height="18" aria-hidden="true"><use href="#i-code"/></svg>
+        </a>
+      </div>
+    </header>
+
+    <!-- ============ Navigation: four places, one at a time ============ -->
+    <nav class="rail" aria-label="Sections">
+      <a class="rail-link is-active" href="#view=overview" data-view-link="overview" aria-current="page">
+        <svg width="20" height="20" aria-hidden="true"><use href="#i-overview"/></svg><span>Overview</span>
+      </a>
+      <a class="rail-link" href="#view=meters" data-view-link="meters">
+        <svg width="20" height="20" aria-hidden="true"><use href="#i-meters"/></svg><span>Meters</span>
+      </a>
+      <a class="rail-link" href="#view=network" data-view-link="network">
+        <svg width="20" height="20" aria-hidden="true"><use href="#i-network"/></svg><span>Network</span>
+      </a>
+      <a class="rail-link" href="#view=map" data-view-link="map">
+        <svg width="20" height="20" aria-hidden="true"><use href="#i-map"/></svg><span>Map</span>
+      </a>
+    </nav>
+
+    <main class="stage" id="main" tabindex="-1">
+
+      <!-- ================= Overview: the numbers first ================= -->
+      <section class="view" id="view-overview" data-view="overview" aria-labelledby="overview-title">
+        <header class="view-head">
+          <div>
+            <p class="eyebrow">Flock Energy · Operations</p>
+            <h1 class="view-title" id="overview-title">Network overview</h1>
+          </div>
+          <p class="view-sub" id="overview-sub">Reading the meter list…</p>
+        </header>
+
+        <section class="hero" id="hero" aria-label="Meters at a glance">
+          <svg class="hero-bolt" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-bolt"/></svg>
+          <div class="hero-main">
+            <p class="hero-label">Meters on the network</p>
+            <div class="hero-number is-loading" id="hero-total" aria-live="polite">—</div>
+            <p class="hero-note" id="hero-note"></p>
+          </div>
+
+          <div class="hero-split">
+            <div class="split-bar" id="hero-bar" role="img" aria-label="Meters by status">
+              <i class="k-installed"></i><i class="k-decommissioned"></i><i class="k-other"></i>
+            </div>
+            <div class="hero-stats">
+              <button type="button" class="stat" data-scope='{"kind":"installed"}'>
+                <span class="stat-label"><i class="dot k-installed"></i>Installed</span>
+                <strong class="stat-num is-loading" id="stat-installed">—</strong>
+                <span class="stat-note" id="stat-installed-note"></span>
+              </button>
+              <button type="button" class="stat" data-scope='{"kind":"decommissioned"}'>
+                <span class="stat-label"><i class="dot k-decommissioned"></i>Decommissioned</span>
+                <strong class="stat-num is-loading" id="stat-decommissioned">—</strong>
+                <span class="stat-note" id="stat-decommissioned-note"></span>
+              </button>
+              <button type="button" class="stat" data-scope='{"kind":"other"}'>
+                <span class="stat-label"><i class="dot k-other"></i>Other statuses</span>
+                <strong class="stat-num is-loading" id="stat-other">—</strong>
+                <span class="stat-note" id="stat-other-note"></span>
+              </button>
+              <button type="button" class="stat" data-scope='{"located":"yes"}' data-go="map">
+                <span class="stat-label"><svg width="12" height="12" aria-hidden="true"><use href="#i-map"/></svg>On the map</span>
+                <strong class="stat-num is-loading" id="stat-located">—</strong>
+                <span class="stat-note" id="stat-located-note"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="hero-progress" id="hero-progress" hidden>
+            <div class="progress" aria-hidden="true"><span id="hero-progress-bar"></span></div>
+            <p id="hero-progress-text"></p>
+          </div>
+        </section>
+
+        <div class="overview-grid">
+          <section class="panel" id="attention-panel" aria-labelledby="attention-title">
+            <header class="panel-head">
+              <h2 class="panel-title" id="attention-title">Worth a look</h2>
+              <p class="panel-sub">Gaps found in the data, one click from the meters</p>
+            </header>
+            <div class="attention-list" id="attention-list">
+              <p class="panel-empty">Checks appear once the meter list is in.</p>
+            </div>
+          </section>
+
+          <section class="panel" id="recent-panel" aria-labelledby="recent-title" hidden>
+            <header class="panel-head">
+              <h2 class="panel-title" id="recent-title">Pick up where you left off</h2>
+              <p class="panel-sub">Meters you opened recently</p>
+            </header>
+            <div class="recent-list" id="recent-list"></div>
+          </section>
+
+          <section class="panel" aria-labelledby="busiest-title">
+            <header class="panel-head">
+              <h2 class="panel-title" id="busiest-title">Busiest transformers</h2>
+              <p class="panel-sub" id="busiest-sub">Most meters on one transformer</p>
+            </header>
+            <div class="rank-list" id="busiest-list">
+              <p class="panel-empty">Appears once the meter list is in.</p>
+            </div>
+          </section>
+
+          <section class="panel" aria-labelledby="makes-title">
+            <header class="panel-head">
+              <h2 class="panel-title" id="makes-title">By make</h2>
+              <p class="panel-sub">Select a make to see its meters</p>
+            </header>
+            <div class="rank-list" id="makes-list">
+              <p class="panel-empty">Appears once the meter list is in.</p>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <!-- ================= Meters: the list is the page ================= -->
+      <section class="view" id="view-meters" data-view="meters" aria-labelledby="meters-title" hidden>
+        <header class="view-head">
+          <div>
+            <p class="eyebrow">Find and check</p>
+            <h1 class="view-title" id="meters-title">Meters</h1>
+          </div>
+          <p class="view-sub" id="meters-sub">—</p>
+        </header>
+
+        <div class="toolbar">
+          <label class="field-search">
+            <span class="visually-hidden">Filter the list by meter id, serial number, transformer or area</span>
+            <svg width="16" height="16" aria-hidden="true"><use href="#i-search"/></svg>
+            <input id="m-search" type="search" autocomplete="off" placeholder="Filter by id, serial, transformer or area…">
+          </label>
+
+          <div class="seg" id="m-kind" role="group" aria-label="Status">
+            <button type="button" data-kind="" aria-pressed="true">All <b id="seg-all">—</b></button>
+            <button type="button" data-kind="installed" aria-pressed="false"><i class="dot k-installed"></i>Installed <b id="seg-installed">—</b></button>
+            <button type="button" data-kind="decommissioned" aria-pressed="false"><i class="dot k-decommissioned"></i>Decommissioned <b id="seg-decommissioned">—</b></button>
+            <button type="button" data-kind="other" aria-pressed="false"><i class="dot k-other"></i>Other <b id="seg-other">—</b></button>
+          </div>
+
+          <label class="select">
+            <span class="visually-hidden">Make</span>
+            <select id="m-make"><option value="">All makes</option></select>
+          </label>
+          <label class="select">
+            <span class="visually-hidden">Location</span>
+            <select id="m-located">
+              <option value="">Any location</option>
+              <option value="yes">Has coordinates</option>
+              <option value="no">No coordinates</option>
+              <option value="unknown">Not checked yet</option>
+            </select>
+          </label>
+          <button type="button" class="btn" id="m-map">
+            <svg width="16" height="16" aria-hidden="true"><use href="#i-map"/></svg>Show on map
+          </button>
+        </div>
+
+        <div class="scope-bar" id="scope-meters" hidden>
+          <p class="scope-answer" id="scope-answer" role="status" aria-live="polite"></p>
+          <div class="chips" id="chips-meters"></div>
+        </div>
+
+        <section class="table-card" aria-label="Meter list">
+          <div class="table-wrap">
+            <table class="data-table" id="m-table">
+              <thead>
+                <tr>
+                  <th scope="col" aria-sort="ascending"><button type="button" class="sort" data-sort="id">Meter</button></th>
+                  <th scope="col"><button type="button" class="sort" data-sort="make">Make</button></th>
+                  <th scope="col"><button type="button" class="sort" data-sort="status">Status</button></th>
+                  <th scope="col"><button type="button" class="sort" data-sort="transformer">Transformer</button></th>
+                  <th scope="col"><button type="button" class="sort" data-sort="location">Location</button></th>
+                  <th scope="col" class="col-go"><span class="visually-hidden">Open</span></th>
+                </tr>
+              </thead>
+              <tbody id="m-rows"></tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <button type="button" class="btn btn-quiet" id="m-prev">
+              <svg class="flip" width="16" height="16" aria-hidden="true"><use href="#i-chevron"/></svg>Previous
+            </button>
+            <span id="m-page-label">—</span>
+            <button type="button" class="btn btn-quiet" id="m-next">
+              Next<svg width="16" height="16" aria-hidden="true"><use href="#i-chevron"/></svg>
+            </button>
+          </div>
+        </section>
+        <p class="foot-note" id="m-note"></p>
+      </section>
+
+      <!-- ================= Network: drill down one level at a time ================= -->
+      <section class="view" id="view-network" data-view="network" aria-labelledby="network-title" hidden>
+        <header class="view-head">
+          <div>
+            <p class="eyebrow">Zone to meter</p>
+            <h1 class="view-title" id="network-title">Network</h1>
+          </div>
+          <p class="view-sub" id="network-sub">Choose a branch to follow it down to its meters.</p>
+        </header>
+
+        <nav class="crumbs" id="net-crumbs" aria-label="Where you are in the network"></nav>
+        <p class="banner" id="net-banner" hidden></p>
+
+        <div class="net-layout">
+          <div class="branch-scroll" id="branch-scroll">
+            <div class="branch" id="branch" role="tree" aria-label="Network branches"></div>
+          </div>
+          <aside class="focus" id="focus" aria-label="Selected branch"></aside>
+        </div>
+      </section>
+
+      <!-- ================= Map: where the meters are ================= -->
+      <section class="view view-map" id="view-map" data-view="map" aria-labelledby="map-title" hidden>
+        <h1 class="visually-hidden" id="map-title">Map</h1>
+        <div class="map-wrap">
+          <div id="map" aria-label="Map of meter locations"></div>
+          <div class="map-panel" id="map-panel">
+            <div class="map-panel-top">
+              <div>
+                <p class="map-count" id="map-count">—</p>
+                <p class="map-sub" id="map-sub"></p>
+              </div>
+              <button type="button" class="icon-btn" id="map-fit" aria-label="Fit the map to the results" title="Fit to results">
+                <svg width="17" height="17" aria-hidden="true"><use href="#i-fit"/></svg>
+              </button>
+            </div>
+            <div class="chips" id="chips-map"></div>
+            <ul class="legend">
+              <li><i class="dot k-installed"></i>Installed</li>
+              <li><i class="dot k-decommissioned"></i>Decommissioned</li>
+              <li><i class="dot k-other"></i>Other</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <footer class="foot">
+        <span id="freshness">Meter list not read yet.</span>
+        <a href="/openapi.json">OpenAPI</a>
+      </footer>
+    </main>
+
+    <!-- ============ One meter: a drawer that opens over whatever you were doing ============ -->
+    <div class="scrim" id="scrim" hidden></div>
+    <aside class="drawer" id="drawer" role="dialog" aria-modal="false" aria-labelledby="drawer-title" aria-hidden="true" tabindex="-1">
+      <header class="drawer-head">
+        <div class="drawer-id">
+          <p class="eyebrow">Meter</p>
+          <h2 id="drawer-title">—</h2>
+        </div>
+        <button type="button" class="icon-btn" id="drawer-close" aria-label="Close meter details" title="Close (Esc)">
+          <svg width="18" height="18" aria-hidden="true"><use href="#i-close"/></svg>
+        </button>
+      </header>
+      <div class="drawer-body" id="drawer-body"></div>
+    </aside>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+    <script src="/vendor/leaflet.js"></script>
+    <script src="/ask.js" defer></script>
+    <script src="/dashboard.js" defer></script>
+  </body>
+</html>
